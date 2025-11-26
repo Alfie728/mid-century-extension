@@ -61,6 +61,38 @@ export interface ActionPayload {
   };
 }
 
+export interface ScreenshotArtifact {
+  screenshotId: string;
+  sessionId?: string;
+  actionId?: string;
+  phase?: 'before' | 'after' | 'during';
+  streamTimestamp?: number;
+  wallClockCapturedAt: number;
+  captureLatencyMs?: number;
+  blobRef?: string;
+}
+
+export interface VideoChunk {
+  chunkId: string;
+  sessionId?: string;
+  startStreamTime?: number;
+  endStreamTime?: number;
+  timecode?: number;
+  wallClockCapturedAt: number;
+  mimeType?: string;
+  bitrate?: number;
+  blobRef?: string;
+}
+
+export interface UploadJob {
+  jobId: string;
+  itemRefs: string[];
+  status: 'pending' | 'uploading' | 'failed' | 'done';
+  retries: number;
+  lastError?: string;
+  createdAt: number;
+}
+
 export type CuaMessage =
   | { type: 'cua/start'; payload: { source: CaptureSourceType; requestedAt: number } }
   | { type: 'cua/stop'; payload?: { reason?: string } }

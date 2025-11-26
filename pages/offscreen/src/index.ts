@@ -1,3 +1,4 @@
+import { clearAll, enforceLimits, getDb, listRecentActions, saveAction, saveSession } from './db.js';
 import { isCuaMessage } from '@extension/shared';
 import type { ActionPayload, CuaMessage, SessionState } from '@extension/shared';
 
@@ -5,6 +6,7 @@ const log = (...args: unknown[]) => console.log('[CUA][offscreen]', ...args);
 
 let sessionState: SessionState = { status: 'idle' };
 const actionBuffer: ActionPayload[] = [];
+let dbReady = false;
 
 const sendMessage = (message: CuaMessage) =>
   chrome.runtime.sendMessage(message).catch(error => {
@@ -33,6 +35,12 @@ const handleStart = async (message: CuaMessage, sendResponse?: (response: CuaMes
     source: incomingSession?.source,
   };
   actionBuffer.length = 0;
+  try {
+    await saveSession(sessionState);
+    await enforceLimits();
+  } catch (error) {
+    log('Failed to persist session', error);
+  }
   log('Session started', sessionId);
   sendResponse?.({ type: 'cua/ack', payload: { ok: true, session: sessionState } });
 };
@@ -57,7 +65,10 @@ const handleStop = (message: CuaMessage, sendResponse?: (response: CuaMessage) =
 const handleAction = (payload: ActionPayload) => {
   if (sessionState.status !== 'recording') return;
   actionBuffer.push(payload);
-  // TODO: persist to IndexedDB once storage layer is in place
+  if (dbReady) {
+    void saveAction(payload).catch(error => log('Failed to save action', error));
+    void enforceLimits();
+  }
 };
 
 const handleStatusRequest = (sendResponse?: (response: CuaMessage) => void) => {
@@ -88,4 +99,24 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
 });
 
 void sendMessage({ type: 'cua/offscreen-ready', payload: { sessionId: sessionState.sessionId } });
-log('Offscreen recorder host ready');
+void getDb()
+  .then(async () => {
+    dbReady = true;
+    if (actionBuffer.length) {
+      const pending = [...actionBuffer];
+      actionBuffer.length = 0;
+      await Promise.all(
+        pending.map(action => saveAction(action).catch(error => log('Failed to save buffered action', error))),
+      );
+    }
+    (globalThis as unknown as { __cuaDebug?: unknown }).__cuaDebug = {
+      listRecentActions,
+      clearAll,
+    };
+    void sendMessage({ type: 'cua/offscreen-ready', payload: { sessionId: sessionState.sessionId } });
+    log('Offscreen recorder host ready');
+  })
+  .catch(error => {
+    log('Failed to open IndexedDB', error);
+    void sendMessage({ type: 'cua/offscreen-ready', payload: { sessionId: sessionState.sessionId } });
+  });
