@@ -31,7 +31,16 @@ const manifest = {
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
   host_permissions: ['<all_urls>'],
-  permissions: ['storage', 'scripting', 'tabs', 'notifications', 'sidePanel'],
+  permissions: [
+    'storage',
+    'scripting',
+    'tabs',
+    'notifications',
+    'sidePanel',
+    'offscreen',
+    'tabCapture',
+    'desktopCapture',
+  ],
   options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
@@ -78,6 +87,11 @@ const manifest = {
   ],
   side_panel: {
     default_path: 'side-panel/index.html',
+  },
+  offscreen_document: {
+    page: 'offscreen/index.html',
+    reasons: ['BLOBS'],
+    justification: 'Capture CUA video, screenshots, and uploads from a persistent offscreen context.',
   },
 } satisfies ManifestType;
 

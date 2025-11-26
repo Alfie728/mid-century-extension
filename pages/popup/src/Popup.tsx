@@ -1,63 +1,122 @@
 import '@src/Popup.css';
-import { t } from '@extension/i18n';
-import { PROJECT_URL_OBJECT, useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
-import { cn, ErrorDisplay, LoadingSpinner, ToggleButton } from '@extension/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CaptureSourceType, CuaMessage, SessionState } from '@extension/shared';
 
-const notificationOptions = {
-  type: 'basic',
-  iconUrl: chrome.runtime.getURL('icon-34.png'),
-  title: 'Injecting content script error',
-  message: 'You cannot inject script here!',
-} as const;
+const sourceOptions: CaptureSourceType[] = ['tab', 'screen'];
 
 const Popup = () => {
-  const { isLight } = useStorage(exampleThemeStorage);
-  const logo = isLight ? 'popup/logo_vertical.svg' : 'popup/logo_vertical_dark.svg';
+  const [session, setSession] = useState<SessionState>({ status: 'idle' });
+  const [source, setSource] = useState<CaptureSourceType>('tab');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const goGithubSite = () => chrome.tabs.create(PROJECT_URL_OBJECT);
-
-  const injectContentScript = async () => {
-    const [tab] = await chrome.tabs.query({ currentWindow: true, active: true });
-
-    if (tab.url!.startsWith('about:') || tab.url!.startsWith('chrome:')) {
-      chrome.notifications.create('inject-error', notificationOptions);
+  const statusLabel = useMemo(() => {
+    switch (session.status) {
+      case 'recording':
+        return 'Recording';
+      case 'paused':
+        return 'Paused';
+      case 'ended':
+        return 'Ended';
+      default:
+        return 'Idle';
     }
+  }, [session.status]);
 
-    await chrome.scripting
-      .executeScript({
-        target: { tabId: tab.id! },
-        files: ['/content-runtime/example.iife.js', '/content-runtime/all.iife.js'],
-      })
-      .catch(err => {
-        // Handling errors related to other paths
-        if (err.message.includes('Cannot access a chrome:// URL')) {
-          chrome.notifications.create('inject-error', notificationOptions);
-        }
-      });
+  const requestStatus = useCallback(async () => {
+    const response = (await chrome.runtime.sendMessage({
+      type: 'cua/status-request',
+    })) as CuaMessage | undefined;
+    if (response?.type === 'cua/status') {
+      setSession(response.payload);
+    }
+  }, []);
+
+  const startTracking = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'cua/start',
+        payload: { source, requestedAt: Date.now() },
+      })) as CuaMessage | undefined;
+      if (response?.type === 'cua/status') {
+        setSession(response.payload);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const stopTracking = async () => {
+    setLoading(true);
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'cua/stop',
+      })) as CuaMessage | undefined;
+      if (response?.type === 'cua/status') {
+        setSession(response.payload);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void requestStatus();
+  }, [requestStatus]);
+
+  useEffect(() => {
+    const handleMessage = (message: CuaMessage) => {
+      if (message.type === 'cua/status') {
+        setSession(message.payload);
+      }
+    };
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
+
   return (
-    <div className={cn('App', isLight ? 'bg-slate-50' : 'bg-gray-800')}>
-      <header className={cn('App-header', isLight ? 'text-gray-900' : 'text-gray-100')}>
-        <button onClick={goGithubSite}>
-          <img src={chrome.runtime.getURL(logo)} className="App-logo" alt="logo" />
-        </button>
-        <p>
-          Edit <code>pages/popup/src/Popup.tsx</code>
-        </p>
-        <button
-          className={cn(
-            'mt-4 rounded px-4 py-1 font-bold shadow hover:scale-105',
-            isLight ? 'bg-blue-200 text-black' : 'bg-gray-700 text-white',
-          )}
-          onClick={injectContentScript}>
-          {t('injectButton')}
-        </button>
-        <ToggleButton>{t('toggleTheme')}</ToggleButton>
+    <div className="App">
+      <header className="App-header">
+        <div className="header-row">
+          <div className={`pill pill-${session.status}`}>{statusLabel}</div>
+          <span className="session-id">{session.sessionId ?? 'no session yet'}</span>
+        </div>
+
+        <div className="card">
+          <div className="field">
+            <span className="label">Capture</span>
+            <div className="toggle">
+              {sourceOptions.map(option => (
+                <button
+                  key={option}
+                  className={`toggle-btn${source === option ? 'active' : ''}`}
+                  onClick={() => setSource(option)}
+                  disabled={loading || session.status === 'recording'}>
+                  {option === 'tab' ? 'This tab' : 'Screen'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="actions">
+            <button className="primary" onClick={startTracking} disabled={loading || session.status === 'recording'}>
+              {session.status === 'recording' ? 'Recording...' : 'Start tracking'}
+            </button>
+            <button className="ghost" onClick={stopTracking} disabled={loading || session.status === 'idle'}>
+              Stop
+            </button>
+          </div>
+          {error ? <div className="error">{error}</div> : null}
+        </div>
       </header>
     </div>
   );
 };
 
-export default withErrorBoundary(withSuspense(Popup, <LoadingSpinner />), ErrorDisplay);
+export default Popup;

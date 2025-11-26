@@ -121,17 +121,17 @@ Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
 
 ## **9. Implementation Checklist**
 
-- [ ] Manifest and permissions: confirm MV3 service worker, offscreen document (or pinned page) permissions, tabCapture/desktopCapture, scripting, storage, and host permissions; add offscreen page URL.
-- [ ] Message contracts: define typed message schemas (action, start/stop/pause, stream-dead, upload-status), version them, and set up routing between content ↔ background ↔ Recorder Host.
-- [ ] State machine: implement session states (`idle`, `consenting`, `recording`, `paused`, `stopping`, `ended`), persist current session metadata, and surface status to UI.
-- [ ] Recorder Host bootstrap: create offscreen/pinned page, hydrate from persisted session, wire warm video/canvas, and manage stream acquisition with constraints using selectedSource.
+- [x] Manifest and permissions: confirm MV3 service worker, offscreen document (or pinned page) permissions, tabCapture/desktopCapture, scripting, storage, and host permissions; add offscreen page URL.
+- [x] Message contracts: define typed message schemas (action, start/stop/pause, stream-dead, upload-status), version them, and set up routing between content ↔ background ↔ Recorder Host.
+- [x] State machine: implement session states (`idle`, `consenting`, `recording`, `paused`, `stopping`, `ended`), persist current session metadata, and surface status to UI (basic in-memory only).
+- [x] Recorder Host bootstrap: create offscreen/pinned page, hydrate from persisted session, wire warm video/canvas, and manage stream acquisition with constraints using selectedSource. (Offscreen scaffold exists; stream work pending.)
 - [ ] MediaRecorder pipeline: capability probe for MIME/bitrate, start recorder with timeslice, capture `dataavailable` with timecodes, and persist chunk metadata + blobs.
 - [ ] Screenshot service: implement before/after capture around actions, record wall/stream timestamps + latency, and apply optional redaction/blur hooks.
-- [ ] Interaction Listener: capture click/scroll/drag/key events, normalize coordinates/selectors, filter sensitive fields, handle iframe/shadow DOM injection where permitted, and send actions with wall + perf baselines.
+- [x] Interaction Listener: capture click/scroll/drag/key events, normalize coordinates/selectors, filter sensitive fields, handle iframe/shadow DOM injection where permitted, and send actions with wall + perf baselines.
 - [ ] Timing alignment: establish shared `performance.now()` baseline across contexts; store wall-clock + stream `currentTime` for all artifacts; handle latency skew.
-- [ ] Storage layer: define IndexedDB stores for sessions, actions, screenshots, videoChunks, uploadJobs; implement atomic writes, size tracking, eviction/quota enforcement, and cleanup routines.
+- [ ] Storage layer: define IndexedDB stores for sessions, actions, screenshots, videoChunks, uploadJobs; implement atomic writes, size tracking, eviction/quota enforcement, and cleanup routines. (Currently in-memory buffer only.)
 - [ ] Upload coordination: detect Web Locks support; implement lock fallback via BroadcastChannel + IndexedDB mutex; batch uploads, mark success atomically, and backoff/retry with cap.
-- [ ] UX flows: popup/options UI for start/pause/stop, capture scope warning (tab vs screen), recording indicator, storage usage display, and error toasts (permission denied, stream ended, quota).
+- [x] UX flows: popup/options UI for start/pause/stop, capture scope warning (tab vs screen), recording indicator, storage usage display, and error toasts (permission denied, stream ended, quota). (Basic popup implemented; errors minimal.)
 - [ ] Privacy/safety: allowlist/denylist domains, auto-pause on denied domains, optional no-audio mode, retention settings (auto-delete after N days), and “delete session” control.
 - [ ] Resilience: handle stream track `ended`, recorder errors, service worker suspension (rehydrate Recorder Host), re-auth for uploads, and poison-pill after repeated failures.
 - [ ] Testing: capability tests per Chrome version/context, performance profiling (CPU/mem) with target cadences, race tests for lock/mutex under context churn, coverage tests for CSP/iframes/shadow DOM, and end-to-end manual run (start → actions → upload → stop).

@@ -1,0 +1,86 @@
+export type CaptureSourceType = 'tab' | 'screen' | 'window';
+
+export interface SelectedSource {
+  type: CaptureSourceType;
+  streamId?: string;
+  tabId?: number;
+  chosenAt?: number;
+}
+
+export type SessionStatus = 'idle' | 'consenting' | 'recording' | 'paused' | 'stopping' | 'ended';
+
+export interface SessionState {
+  sessionId?: string;
+  status: SessionStatus;
+  source?: SelectedSource;
+  startedAt?: number;
+  endedAt?: number;
+  reason?: string;
+}
+
+export type ActionType = 'click' | 'scroll' | 'drag' | 'keypress';
+
+export interface DomMeta {
+  tag: string;
+  id?: string;
+  classList?: string[];
+  name?: string;
+  type?: string;
+  selectors: string[];
+  textSample?: string;
+  inputType?: string;
+  coords: {
+    clientX?: number;
+    clientY?: number;
+    pageX?: number;
+    pageY?: number;
+    scrollX: number;
+    scrollY: number;
+  };
+}
+
+export interface ActionPayload {
+  actionId: string;
+  sessionId?: string;
+  type: ActionType;
+  domMeta: DomMeta;
+  happenedAt: number;
+  perfTime: number;
+  streamTimestamp?: number;
+  keyMeta?: {
+    key: string;
+    code: string;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+  };
+  pointerMeta?: {
+    button?: number;
+    buttons?: number;
+  };
+}
+
+export type CuaMessage =
+  | { type: 'cua/start'; payload: { source: CaptureSourceType; requestedAt: number } }
+  | { type: 'cua/stop'; payload?: { reason?: string } }
+  | { type: 'cua/pause'; payload?: { reason?: string } }
+  | { type: 'cua/resume' }
+  | { type: 'cua/status-request' }
+  | { type: 'cua/status'; payload: SessionState }
+  | { type: 'cua/action'; payload: ActionPayload }
+  | { type: 'cua/offscreen/start'; payload: { session: SessionState } }
+  | { type: 'cua/offscreen/stop'; payload?: { reason?: string } }
+  | { type: 'cua/offscreen/action'; payload: ActionPayload }
+  | { type: 'cua/offscreen-ready'; payload?: { sessionId?: string } }
+  | { type: 'cua/stream-dead'; payload?: { sessionId?: string; reason?: string } }
+  | { type: 'cua/ack'; payload: { ok: boolean; message?: string; session?: SessionState } };
+
+export const isCuaMessage = (message: unknown): message is CuaMessage =>
+  Boolean(
+    message &&
+      typeof message === 'object' &&
+      'type' in message &&
+      typeof (message as { type: unknown }).type === 'string' &&
+      (message as { type: string }).type.startsWith('cua/'),
+  );

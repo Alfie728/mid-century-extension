@@ -486,6 +486,19 @@ importers:
         specifier: ^1.89.0
         version: 1.92.1
 
+  pages/offscreen:
+    dependencies:
+      '@extension/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@extension/tsconfig':
+        specifier: workspace:*
+        version: link:../../packages/tsconfig
+      '@extension/vite-config':
+        specifier: workspace:*
+        version: link:../../packages/vite-config
+
   pages/options:
     dependencies:
       '@extension/i18n':
@@ -513,18 +526,9 @@ importers:
 
   pages/popup:
     dependencies:
-      '@extension/i18n':
-        specifier: workspace:*
-        version: link:../../packages/i18n
       '@extension/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@extension/storage':
-        specifier: workspace:*
-        version: link:../../packages/storage
-      '@extension/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
     devDependencies:
       '@extension/tailwindcss-config':
         specifier: workspace:*
