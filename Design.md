@@ -1,181 +1,137 @@
-## **1. Overall architecture**
+## **1. Architecture (MV3-aware)**
 
 Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
 
-1. **Interaction Listener** (content script)
-    - Watches clicks, scrolls, key events, drags.
-    - Emits high level Action events (with timestamps and metadata).
-2. **Capture Orchestrator** (background or extension page)
-    - Uses `chrome.desktopCapture.chooseDesktopMedia` once to get consent and a stream id.
-    - Uses `navigator.mediaDevices.getUserMedia` with that id to create a MediaStream of the chosen tab.
-    - Hands that stream to:
-        - Screenshot service
-        - Video recording service
-3. **Screenshot Service**
-    - Given `MediaStream` and an `ActionId` plus phase (before or after), grabs a still frame from the stream.
-    - Produces `ScreenshotArtifact` that can be attached to the action.
-4. **Video Recording Service**
-    - Uses `MediaRecorder` on the same `MediaStream`.
-    - Records the stream into small chunks (for example every N seconds) and indexes them by time.
-5. **Upload Coordinator**
-    - Manages upload of screenshots plus video chunks to your backend.
-    - Uses navigator.locks so only one uploader runs at a time across all extension contexts.
-    
+- **Interaction Listener** (content script): Captures clicks/scrolls/keys/drags, filters sensitive targets, emits high-level Action events with timestamps and DOM metadata.
+- **Background Orchestrator** (service worker): Manages session lifecycle, permissions, state, and messaging between contexts. Avoids owning long-lived streams (SW can suspend).
+- **Recorder Host** (offscreen document or pinned extension page): Sole owner of `MediaStream`, `MediaRecorder`, and canvas screenshot pipeline so streams survive SW suspension. Communicates via typed messages.
+- **Screenshot Service** (in Recorder Host): Given `MediaStream`, `ActionId`, and phase (before/after), grabs frames and produces `ScreenshotArtifact` with dual timestamps (wall + stream).
+- **Video Recording Service** (in Recorder Host): Runs `MediaRecorder` with selected MIME/bitrate/timeslice, indexes emitted chunks by timecode and stream timestamp.
+- **Upload Coordinator** (Recorder Host preferred): Batches uploads of actions, screenshots, and video chunks using Web Locks or a BroadcastChannel+IndexedDB mutex fallback so only one uploader runs at a time.
 
 ---
 
-## **2. API Designs**
+## **2. Key APIs and Policies**
 
-### **2.1 Tab selection - `chrome.desktopCapture.chooseDesktopMedia`**
+### **2.1 Capture Source**
+- Prefer `chrome.tabCapture` for tab-only sessions (simpler consent, narrower scope). Fall back to `chrome.desktopCapture.chooseDesktopMedia` for screen/window; show stronger warnings.
+- Persist selectedSource: `{ type: "tab" | "screen" | "window", streamId, chosenAt, tabId? }`. If user cancels, keep collecting actions but skip stream-bound artifacts.
 
-**Responsibility**
+### **2.2 Stream Acquisition**
+- Recorder Host calls `navigator.mediaDevices.getUserMedia` with `chromeMediaSourceId` from capture API. Handles permission denial/revocation and track `ended` events; emits `stream-dead` to UI.
+- Warm up a hidden `<video>` bound to the stream and draw once to canvas before first screenshot to avoid blank frames.
 
-- Let the user pick which tab or screen to record.
-- Provides a streamId that can be used with getUserMedia.
+### **2.3 MediaRecorder**
+- Capability probe with `MediaRecorder.isTypeSupported`. Ordered candidates: `video/webm;codecs=vp9,opus`, then `vp8,opus`, then `video/webm`.
+- Record with timeslices (e.g., 5–10s). Use `dataavailable.timecode` plus a shared `performance.now()` baseline to align chunk windows; store chosen MIME/bitrate and actual timeslice variance.
 
-**Design**
+### **2.4 Screenshots**
+- Given ActionId + phase, draw current frame from the warmed `<video>` to an offscreen `<canvas>`, encode to blob. Capture both wall-clock and stream `currentTime`; note capture latency.
+- Provide redaction hooks (blur selectors, disable audio if captured).
 
-- Triggered once per session from your background or popup:
-    - For example, when user presses “Start tracking” in the popup.
-- Store in extension state:
-    - selectedSource: { type: "tab" | "screen", streamId, chosenAt }.
-- If the user cancels or closes, you keep tracking events but simply do not create a stream.
-
----
-
-### **2.2 Stream acquisition - `navigator.mediaDevices.getUserMedia`**
-
-**Responsibility**
-
-- Turn the streamId from desktopCapture into a real MediaStream object.
-
-**Design**
-
-- The Capture Orchestrator calls getUserMedia with Chrome constraints that reference the streamId.
-- Once the MediaStream is available, it becomes the single source of truth for visuals.
-- The stream is passed to:
-    - Screenshot Service (for stills).
-    - MediaRecorder (for video).
+### **2.5 Upload Coordination**
+- Target `navigator.locks` when available. Detect absence and fall back to BroadcastChannel + IndexedDB CAS-based mutex with lease expiration.
+- Batch uploads by size/time; mark records uploaded atomically to avoid duplicates. On failure, exponential backoff with cap and poison-pill state after N retries.
 
 ---
 
-### **2.3 Video recording - `MediaRecorder`**
-
-**Responsibility**
-
-- Continuously record the MediaStream into time stamped binary chunks.
-
-**Design**
-
-- Video Recording Service owns one MediaRecorder per active stream.
-- It records in small timeslices, e.g. 5 or 10 seconds, so you get many chunks instead of one massive file.
-- For each emitted chunk you store:
-    - chunkId
-    - startTime and endTime on the stream timeline
-    - a reference to the session it belongs to
-
-Later we can map actions to video segments based on timestamps (for example, all actions that happened between startTime and endTime share that chunk).
-
----
-
-### **2.4 Screenshots - built on top of the stream**
-
-**Responsibility**
-
-- Give you “before” and “after” still frames without calling tab capture every time.
-
-**Design**
-
-- Screenshot Service is given:
-    - The shared MediaStream
-    - An ActionId and a phase (before, after)
-- It:
-    - Renders the stream to an offscreen <video> element.
-    - Draws the current video frame to an offscreen <canvas>.
-    - Encodes that canvas to a blob or data URL.
-- Produces small `ScreenshotArtifacts` like:
-    - (actionId, phase, timestampOnStream, blobRef)
-
-These get attached to the corresponding Action object that the Interaction Listener defined.
-
-So for each action we have:
-
-- Rich event metadata from the DOM.
-- Two precise frames from the shared stream.
-
----
-
-### **2.5 Upload coordination - `navigator.locks`**
-
-**Responsibility**
-
-- Make sure only one “upload worker” runs at a time even if you have:
-    - background script,
-    - popup page,
-    - options page,
-        
-        and possibly an offscreen document.
-        
-
-**Design**
-
-- You maintain a local queue of pending artifacts:
-    - Action JSON
-    - Screenshot blobs
-    - Video chunks
-- Whenever new items are added, you request a lock:
-    - `navigator.locks.request("agent-upload", async lock => { ... })`
-- Inside the lock:
-    - Read a batch from the queue.
-    - Upload to your backend.
-    - Mark them as uploaded or retry on failure.
-- Because of the lock name "agent-upload", only one context at a time will run the critical section.
-- If the popup is closed mid upload, the next context that gets a lock can resume from the queue.
-
-This keeps your upload reliable and avoids races without needing your own distributed mutex.
-
----
-
-## **3. Data model around these APIs**
+## **3. Data Model**
 
 - **Session**
     - sessionId
     - createdAt, endedAt
-    - source (tab/screen selection metadata)
+    - source (type, streamId, tabId?, chosenAt)
+    - limits (maxBytes, maxDuration)
     - actions: Action[]
     - videoChunks: VideoChunk[]
 - **Action**
     - actionId
     - type (click, scroll, drag, keypress)
-    - domMeta (element data, coordinates, etc)
-    - happenedAt (wall clock)
-    - streamTimestamp (time on the stream timeline)
+    - domMeta (element selectors, attributes, coords)
+    - happenedAt (wall clock) and localPerf (shared perf baseline)
+    - streamTimestamp (time on the stream)
     - beforeScreenshotRef
     - afterScreenshotRef
 - **VideoChunk**
     - chunkId
     - sessionId
     - startStreamTime, endStreamTime
+    - timecode (from MediaRecorder), wallClockCapturedAt
+    - mimeType, bitrate
     - blobRef
 - **ScreenshotArtifact**
     - screenshotId
     - sessionId
-    - actionId and phase
-    - streamTimestamp
+    - actionId, phase
+    - streamTimestamp, wallClockCapturedAt, captureLatencyMs
     - blobRef
+- **UploadJob**
+    - jobId
+    - itemRefs[]
+    - status (pending, uploading, failed, done)
+    - retries, lastError
 
 ---
 
-## **4. End to end flow**
+## **4. Storage and Queueing**
 
-1. User starts tracking in the extension UI.
-2. Capture Orchestrator uses chooseDesktopMedia to let the user pick a tab.
-3. It uses getUserMedia with the returned id to create a MediaStream.
-4. Video Recording Service starts a MediaRecorder on that stream to produce continuous timed chunks.
-5. Interaction Listener on each page observes actions and sends abstract Action events to the background.
-6. For each action:
-    - Background asks Screenshot Service to capture a frame for phase before.
-    - After the action finishes, it captures another for phase after.
-    - The action is stored with both screenshots and a pointer into the video timeline.
-7. All artifacts (actions, screenshots, video chunks) are pushed into a local queue.
-8. Upload Coordinator, protected by navigator.locks, uploads them to your backend in batches.
+- Use IndexedDB for blobs and metadata; avoid `chrome.storage` for binaries.
+- Enforce quotas: max session length, total bytes, per-chunk size. When nearing limits, pause recording and prompt user or evict oldest pending artifacts (configurable).
+- Maintain indexes for pending uploads and in-flight locks. Mark uploaded items atomically.
+
+---
+
+## **5. End-to-End Flow (Refined)**
+
+1. User starts tracking in popup/options page; Background sets session state to `consenting`.
+2. Capture source chosen via tabCapture (preferred) or desktopCapture; store selectedSource.
+3. Background instructs Recorder Host to acquire stream with constraints; Recorder warms video/canvas.
+4. Recorder starts MediaRecorder (timesliced) and begins indexing chunks with timecodes.
+5. Interaction Listener emits Action events to Background with wall-clock + perf baseline; Background forwards to Recorder.
+6. Recorder captures before/after screenshots around the action, attaches stream/wall timestamps, and stores Action + artifacts in IndexedDB.
+7. New artifacts enqueue UploadJobs; Upload Coordinator (with lock/mutex) batches uploads to backend, marking successes atomically and backing off on failures.
+8. On pause/stop/user close/track end events, Recorder stops tracks/recorder, flushes queues, and Background updates session to `ended`.
+
+---
+
+## **6. Privacy, UX, and Safety**
+
+- Visible recording indicator and pause/stop controls; stronger warning when capturing screen/window. Allowlist/denylist domains; auto-pause on denied domains.
+- Filter sensitive inputs (password/CC fields) and avoid storing raw keystrokes unless necessary; support redaction/blur for selectors in screenshots.
+- Show retention policy; offer “delete session” and auto-delete after N days. Provide storage usage in UI and warn near limits.
+
+---
+
+## **7. Resilience and Errors**
+
+- Detect and surface: permission denial, stream ended (tab closed), recorder errors, upload auth failures, storage quota exceeded.
+- Service worker suspension: Recorder Host keeps stream alive; Background reconnects on wake and rehydrates state from IndexedDB/session store.
+- Upload retries with capped backoff; poison-pill after N failures to avoid hot loops; manual retry control in UI.
+
+---
+
+## **8. Testing and Validation**
+
+- Capability tests per Chrome version: which contexts support MediaRecorder + canvas for tab/desktop streams (Recorder Host vs popup vs background).
+- Performance tests on mid-tier hardware: CPU/memory for recording + screenshot cadence; tune timeslice, bitrate, screenshot frequency.
+- Lock/mutex tests under multi-context races (popup close, background restart); ensure upload resumes without dupes.
+- Coverage tests: iframe/shadow DOM capture; CSP blocks; permission revocation mid-session.
+
+---
+
+## **9. Implementation Checklist**
+
+- [ ] Manifest and permissions: confirm MV3 service worker, offscreen document (or pinned page) permissions, tabCapture/desktopCapture, scripting, storage, and host permissions; add offscreen page URL.
+- [ ] Message contracts: define typed message schemas (action, start/stop/pause, stream-dead, upload-status), version them, and set up routing between content ↔ background ↔ Recorder Host.
+- [ ] State machine: implement session states (`idle`, `consenting`, `recording`, `paused`, `stopping`, `ended`), persist current session metadata, and surface status to UI.
+- [ ] Recorder Host bootstrap: create offscreen/pinned page, hydrate from persisted session, wire warm video/canvas, and manage stream acquisition with constraints using selectedSource.
+- [ ] MediaRecorder pipeline: capability probe for MIME/bitrate, start recorder with timeslice, capture `dataavailable` with timecodes, and persist chunk metadata + blobs.
+- [ ] Screenshot service: implement before/after capture around actions, record wall/stream timestamps + latency, and apply optional redaction/blur hooks.
+- [ ] Interaction Listener: capture click/scroll/drag/key events, normalize coordinates/selectors, filter sensitive fields, handle iframe/shadow DOM injection where permitted, and send actions with wall + perf baselines.
+- [ ] Timing alignment: establish shared `performance.now()` baseline across contexts; store wall-clock + stream `currentTime` for all artifacts; handle latency skew.
+- [ ] Storage layer: define IndexedDB stores for sessions, actions, screenshots, videoChunks, uploadJobs; implement atomic writes, size tracking, eviction/quota enforcement, and cleanup routines.
+- [ ] Upload coordination: detect Web Locks support; implement lock fallback via BroadcastChannel + IndexedDB mutex; batch uploads, mark success atomically, and backoff/retry with cap.
+- [ ] UX flows: popup/options UI for start/pause/stop, capture scope warning (tab vs screen), recording indicator, storage usage display, and error toasts (permission denied, stream ended, quota).
+- [ ] Privacy/safety: allowlist/denylist domains, auto-pause on denied domains, optional no-audio mode, retention settings (auto-delete after N days), and “delete session” control.
+- [ ] Resilience: handle stream track `ended`, recorder errors, service worker suspension (rehydrate Recorder Host), re-auth for uploads, and poison-pill after repeated failures.
+- [ ] Testing: capability tests per Chrome version/context, performance profiling (CPU/mem) with target cadences, race tests for lock/mutex under context churn, coverage tests for CSP/iframes/shadow DOM, and end-to-end manual run (start → actions → upload → stop).
