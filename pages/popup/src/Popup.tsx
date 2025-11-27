@@ -67,7 +67,7 @@ const Popup = () => {
       }
     }
     const tab = await chrome.tabs.create({
-      url: chrome.runtime.getURL('options/index.html?auto=1'),
+      url: chrome.runtime.getURL('options/index.html'),
       active: true,
     });
     return { tabId: tab.id!, created: true };

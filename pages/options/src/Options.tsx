@@ -35,7 +35,7 @@ const Options = () => {
         return;
       }
       try {
-        console.log('[CUA][options] starting capture with streamId', idToUse);
+        console.log('[CUA][options] starting capture', { streamId: idToUse, source });
         const constraints = {
           audio: false,
           video: {
@@ -49,12 +49,19 @@ const Options = () => {
           },
         } as unknown as MediaStreamConstraints;
 
+        console.log('[CUA][options] constraints', constraints);
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         console.log(
           '[CUA][options] stream acquired',
           stream.getTracks().map(t => t.kind),
         );
         streamRef.current = stream;
+        stream.getTracks().forEach(track => {
+          track.onended = () => {
+            console.log('[CUA][options] track ended');
+            stopStream();
+          };
+        });
         const video = document.createElement('video');
         video.srcObject = stream;
         video.muted = true;
@@ -88,6 +95,10 @@ const Options = () => {
           await enforceLimits();
         };
         recorder.onerror = evt => setError(evt.error?.message ?? 'MediaRecorder error');
+        recorder.onstop = () => {
+          console.log('[CUA][options] MediaRecorder stopped');
+          stopStream();
+        };
         recorder.start(DEFAULT_TIMESLICE_MS);
         console.log('[CUA][options] MediaRecorder started', { mime });
         mediaRecorderRef.current = recorder;
@@ -114,6 +125,7 @@ const Options = () => {
     setError(null);
     try {
       const sources = source === 'tab' ? ['tab'] : ['screen', 'window'];
+      console.log('[CUA][options] prompting capture', { source, sources });
       const id = await new Promise<string | undefined>((resolve, reject) => {
         chrome.desktopCapture.chooseDesktopMedia(sources, chosen => {
           const err = chrome.runtime.lastError;
@@ -184,12 +196,7 @@ const Options = () => {
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, [handleAction, requestStreamId, session.status]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('auto') === '1' && session.status !== 'recording') {
-      void requestStreamId();
-    }
-  }, [requestStreamId, session.status]);
+  // Auto prompt removed; user must click "Select source"
 
   return (
     <div id="app-container">
