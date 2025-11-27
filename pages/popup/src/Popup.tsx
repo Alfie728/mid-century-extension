@@ -1,14 +1,12 @@
 import '@src/Popup.css';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CaptureSourceType, CuaMessage, SessionState } from '@extension/shared';
-
-const sourceOptions: CaptureSourceType[] = ['tab', 'screen'];
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CuaMessage, SessionState } from '@extension/shared';
 
 const Popup = () => {
   const [session, setSession] = useState<SessionState>({ status: 'idle' });
-  const [source, setSource] = useState<CaptureSourceType>('tab');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const recorderTabIdRef = useRef<number | null>(null);
 
   const statusLabel = useMemo(() => {
     switch (session.status) {
@@ -36,13 +34,10 @@ const Popup = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = (await chrome.runtime.sendMessage({
-        type: 'cua/start',
-        payload: { source, requestedAt: Date.now() },
-      })) as CuaMessage | undefined;
-      if (response?.type === 'cua/status') {
-        setSession(response.payload);
-      }
+      const { tabId } = await ensureRecorderTab();
+      recorderTabIdRef.current = tabId;
+      chrome.tabs.update(tabId, { active: true });
+      setSession({ status: 'recording', source: { type: 'screen', chosenAt: Date.now() } });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -53,17 +48,29 @@ const Popup = () => {
   const stopTracking = async () => {
     setLoading(true);
     try {
-      const response = (await chrome.runtime.sendMessage({
-        type: 'cua/stop',
-      })) as CuaMessage | undefined;
-      if (response?.type === 'cua/status') {
-        setSession(response.payload);
-      }
+      await chrome.runtime.sendMessage({ type: 'cua/recorder-stop' } satisfies CuaMessage);
+      setSession({ status: 'ended' });
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const ensureRecorderTab = async (): Promise<{ tabId: number; created: boolean }> => {
+    if (recorderTabIdRef.current) {
+      try {
+        const tab = await chrome.tabs.get(recorderTabIdRef.current);
+        if (tab?.id) return { tabId: tab.id, created: false };
+      } catch {
+        recorderTabIdRef.current = null;
+      }
+    }
+    const tab = await chrome.tabs.create({
+      url: chrome.runtime.getURL('options/index.html?auto=1'),
+      active: true,
+    });
+    return { tabId: tab.id!, created: true };
   };
 
   useEffect(() => {
@@ -89,27 +96,12 @@ const Popup = () => {
         </div>
 
         <div className="card">
-          <div className="field">
-            <span className="label">Capture</span>
-            <div className="toggle">
-              {sourceOptions.map(option => (
-                <button
-                  key={option}
-                  className={`toggle-btn${source === option ? 'active' : ''}`}
-                  onClick={() => setSource(option)}
-                  disabled={loading || session.status === 'recording'}>
-                  {option === 'tab' ? 'This tab' : 'Screen'}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="actions">
-            <button className="primary" onClick={startTracking} disabled={loading || session.status === 'recording'}>
-              {session.status === 'recording' ? 'Recording...' : 'Start tracking'}
+            <button className="primary wide" onClick={startTracking} disabled={loading}>
+              Open recorder
             </button>
-            <button className="ghost" onClick={stopTracking} disabled={loading || session.status === 'idle'}>
-              Stop
+            <button className="ghost wide" onClick={stopTracking} disabled={loading}>
+              Stop recording
             </button>
           </div>
           {error ? <div className="error">{error}</div> : null}

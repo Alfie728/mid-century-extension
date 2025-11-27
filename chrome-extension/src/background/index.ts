@@ -57,23 +57,32 @@ const sendToOffscreen = async (message: CuaMessage) => {
   }
 };
 
+const sendToOptions = (message: CuaMessage) =>
+  chrome.runtime.sendMessage(message).catch(error => log('sendToOptions error', error));
+
 const setSessionState = (updates: Partial<SessionState>) => {
   sessionState = { ...sessionState, ...updates };
   return sessionState;
 };
 
-const handleStartRequest = async (payload: { source: CaptureSourceType }) => {
+const getActiveTabId = async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id;
+};
+
+const handleStartRequest = async (payload: { source: CaptureSourceType; streamId?: string }) => {
   if (sessionState.status === 'recording' && sessionState.sessionId) {
     return sessionState;
   }
 
   const now = Date.now();
   const sessionId = sessionState.sessionId ?? crypto.randomUUID();
+  const tabId = await getActiveTabId();
   const nextState: SessionState = {
     sessionId,
     status: 'recording',
     startedAt: now,
-    source: { type: payload.source, chosenAt: now },
+    source: { type: payload.source, chosenAt: now, tabId, streamId: payload.streamId },
   };
   setSessionState(nextState);
   await ensureOffscreenDocument();
@@ -90,10 +99,37 @@ const handleStopRequest = async (reason?: string) => {
 };
 
 const handleActionEvent = async (payload: ActionPayload) => {
-  if (sessionState.status !== 'recording') return;
+  log('Forwarding action', payload.type);
   await sendToOffscreen({
     type: 'cua/offscreen/action',
     payload,
+  });
+  await sendToOptions({
+    type: 'cua/action',
+    payload,
+  });
+};
+
+const handleStreamRequest = async (sendResponse: (msg: CuaMessage) => void) => {
+  if (!chrome.desktopCapture || typeof chrome.desktopCapture.chooseDesktopMedia !== 'function') {
+    sendResponse({
+      type: 'cua/stream-response',
+      payload: { error: 'desktopCapture API unavailable' },
+    });
+    return;
+  }
+
+  chrome.desktopCapture.chooseDesktopMedia(['tab', 'window', 'screen'], streamId => {
+    const err = chrome.runtime.lastError;
+    if (err) {
+      sendResponse({ type: 'cua/stream-response', payload: { error: err.message } });
+      return;
+    }
+    if (!streamId) {
+      sendResponse({ type: 'cua/stream-response', payload: { error: 'User cancelled' } });
+      return;
+    }
+    sendResponse({ type: 'cua/stream-response', payload: { streamId, source: 'screen' } });
   });
 };
 
@@ -121,6 +157,9 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
       offscreenReady = true;
       void flushOffscreenQueue();
       sendResponse({ type: 'cua/status', payload: sessionState });
+      return true;
+    case 'cua/stream-request':
+      handleStreamRequest(sendResponse);
       return true;
     default:
       break;

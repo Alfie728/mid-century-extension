@@ -49,9 +49,14 @@ if (!alreadyInstalled) {
       actionId: crypto.randomUUID(),
     };
 
-    void chrome.runtime.sendMessage({ type: 'cua/action', payload: action }).catch(error => {
-      console.warn('[CUA] send action failed', error);
-    });
+    void chrome.runtime
+      .sendMessage({ type: 'cua/action', payload: action })
+      .then(() => {
+        console.log('[CUA][content] action sent', type, action.actionId);
+      })
+      .catch(error => {
+        console.warn('[CUA] send action failed', error);
+      });
   };
 
   const handleClick = (event: MouseEvent) => {

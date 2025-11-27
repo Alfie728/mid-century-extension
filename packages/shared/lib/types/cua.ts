@@ -5,6 +5,7 @@ export interface SelectedSource {
   streamId?: string;
   tabId?: number;
   chosenAt?: number;
+  audio?: boolean;
 }
 
 export type SessionStatus = 'idle' | 'consenting' | 'recording' | 'paused' | 'stopping' | 'ended';
@@ -70,6 +71,7 @@ export interface ScreenshotArtifact {
   wallClockCapturedAt: number;
   captureLatencyMs?: number;
   blobRef?: string;
+  data?: Blob;
 }
 
 export interface VideoChunk {
@@ -82,6 +84,7 @@ export interface VideoChunk {
   mimeType?: string;
   bitrate?: number;
   blobRef?: string;
+  data?: Blob;
 }
 
 export interface UploadJob {
@@ -105,6 +108,10 @@ export type CuaMessage =
   | { type: 'cua/offscreen/stop'; payload?: { reason?: string } }
   | { type: 'cua/offscreen/action'; payload: ActionPayload }
   | { type: 'cua/offscreen-ready'; payload?: { sessionId?: string } }
+  | { type: 'cua/stream-request'; payload: { sources: CaptureSourceType[] } }
+  | { type: 'cua/stream-response'; payload: { streamId?: string; error?: string; source?: CaptureSourceType } }
+  | { type: 'cua/recorder-start'; payload?: { streamId?: string; source?: CaptureSourceType; requestedAt?: number } }
+  | { type: 'cua/recorder-stop' }
   | { type: 'cua/stream-dead'; payload?: { sessionId?: string; reason?: string } }
   | { type: 'cua/ack'; payload: { ok: boolean; message?: string; session?: SessionState } };
 

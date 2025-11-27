@@ -103,9 +103,9 @@
 }
 
 .actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .primary,
@@ -116,6 +116,11 @@
   cursor: pointer;
   border: 1px solid transparent;
   transition: transform 120ms ease, background 120ms ease, border 120ms ease;
+}
+
+.wide {
+  width: 100%;
+  justify-content: center;
 }
 
 .primary {
@@ -135,6 +140,10 @@
   cursor: not-allowed;
 }
 
+.hint {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
 .primary:not(:disabled):hover,
 .ghost:not(:disabled):hover {
   transform: translateY(-1px);

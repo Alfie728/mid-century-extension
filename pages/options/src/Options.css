@@ -1,26 +1,117 @@
 #app-container {
-  text-align: center;
   width: 100vw;
   height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #1e293b 0, #0f172a 40%);
+  color: #e5e7eb;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
 }
 
-.App {
-  width: 100vw;
-  height: 100vh;
-  font-size: calc(10px + 2vmin);
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.status {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  background: #1f2937;
+}
+.status-recording {
+  background: #16a34a;
+  color: #0b111d;
+}
+.status-error {
+  background: #f87171;
+  color: #0b111d;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+  display: grid;
+  gap: 1rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.8rem 1.2rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border 120ms ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #0f172a;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e5e7eb;
+}
+
+.field {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  gap: 0.3rem;
+}
+.label {
+  font-size: 0.85rem;
+  color: #cbd5e1;
 }
 
-code {
-  background: rgba(148, 163, 184, 0.5);
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.5rem;
+.toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.toggle-btn {
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  font-weight: 600;
+}
+.toggle-btn.active {
+  background: #22c55e;
+  color: #0f172a;
+  border-color: transparent;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.error {
+  font-size: 0.85rem;
+  color: #fca5a5;
 }
