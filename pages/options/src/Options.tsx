@@ -30,6 +30,8 @@ const Options = () => {
   const sessionIdRef = useRef<string | undefined>(undefined);
   const pendingWritesRef = useRef<Promise<unknown>[]>([]);
   const processedActionIdsRef = useRef<Set<string>>(new Set());
+  const BEFORE_DELAY_MS = 0; // best-effort "before" capture; we can't time-travel pre-event
+  const AFTER_DELAY_MS = 300; // capture after UI settles
 
   const trackWrite = useCallback(<T,>(work: Promise<T>): Promise<T> => {
     const tracked = work
@@ -106,6 +108,7 @@ const Options = () => {
     if (currentSessionId) {
       await exportRecording(currentSessionId);
     }
+    sessionIdRef.current = undefined;
   }, [exportRecording, session.sessionId, session.status, waitForPendingWrites]);
 
   const startStream = useCallback(
@@ -162,7 +165,7 @@ const Options = () => {
         canvas.height = VIDEO_HEIGHT;
         canvasRef.current = canvas;
 
-        const sessionId = session.sessionId ?? crypto.randomUUID();
+        const sessionId = crypto.randomUUID();
         sessionIdRef.current = sessionId;
         processedActionIdsRef.current = new Set();
         const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(
@@ -200,7 +203,7 @@ const Options = () => {
           sessionId,
           status: 'recording',
           startedAt: Date.now(),
-          source: { type: 'screen', streamId: idToUse, chosenAt: Date.now() },
+          source: { type: source, streamId: idToUse, chosenAt: Date.now() },
         };
         setSession(newState);
         await saveSession(newState);
@@ -248,24 +251,30 @@ const Options = () => {
       console.log('[CUA][options] action received', { type: action.type, actionId: action.actionId });
       void trackWrite(saveAction(actionWithSession));
       if (!videoRef.current || !canvasRef.current) return;
-      const capture = (async () => {
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const capture = async (phase: 'before' | 'after', delayMs: number) => {
+        if (delayMs > 0) await sleep(delayMs);
         const ctx = canvasRef.current?.getContext('2d');
         if (!ctx || !videoRef.current) return;
         ctx.drawImage(videoRef.current, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
         const blob = await new Promise<Blob | null>(resolve => canvasRef.current?.toBlob(b => resolve(b), 'image/png'));
         if (!blob) return;
-        console.log('[CUA][options] screenshot captured', { size: blob.size });
+        const capturedAt = Date.now();
+        console.log('[CUA][options] screenshot captured', { size: blob.size, phase });
         await saveScreenshot({
           screenshotId: crypto.randomUUID(),
           sessionId: session.sessionId,
           actionId: action.actionId,
-          phase: 'during',
-          wallClockCapturedAt: Date.now(),
+          phase,
+          wallClockCapturedAt: capturedAt,
+          captureLatencyMs: capturedAt - action.happenedAt,
+          streamTimestamp: typeof videoRef.current.currentTime === 'number' ? videoRef.current.currentTime : undefined,
           data: blob,
         });
         await enforceLimits();
-      })();
-      void trackWrite(capture);
+      };
+      void trackWrite(capture('before', BEFORE_DELAY_MS));
+      void trackWrite(capture('after', AFTER_DELAY_MS));
     },
     [session.sessionId, session.status, trackWrite],
   );
