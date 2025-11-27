@@ -3,7 +3,7 @@
   "ui": "tui",
   "globalEnv": ["CEB_*", "CLI_CEB_*"],
   "globalDependencies": [".env"],
-  "concurrency": "12",
+  "concurrency": "16",
   "tasks": {
     "ready": {
       "dependsOn": ["^ready"],

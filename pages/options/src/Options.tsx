@@ -11,7 +11,7 @@ const sourceOptions: CaptureSourceType[] = ['tab', 'screen'];
 
 const Options = () => {
   const [session, setSession] = useState<SessionState>({ status: 'idle' });
-  const [source, setSource] = useState<CaptureSourceType>('screen');
+  const [source, setSource] = useState<CaptureSourceType>('tab');
   const [streamId, setStreamId] = useState<string | undefined>();
   const [status, setStatus] = useState('Idle');
   const [error, setError] = useState<string | null>(null);
