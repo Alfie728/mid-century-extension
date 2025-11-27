@@ -1,7 +1,14 @@
 import '@src/Options.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionPayload, CaptureSourceType, CuaMessage, SessionState } from '@extension/shared';
-import { saveAction, saveSession, saveScreenshot, saveVideoChunk, enforceLimits } from './storage.js';
+import {
+  saveAction,
+  saveSession,
+  saveScreenshot,
+  saveVideoChunk,
+  enforceLimits,
+  exportSessionArchive,
+} from './storage.js';
 
 const VIDEO_WIDTH = 1920;
 const VIDEO_HEIGHT = 1080;
@@ -15,18 +22,100 @@ const Options = () => {
   const [streamId, setStreamId] = useState<string | undefined>();
   const [status, setStatus] = useState('Idle');
   const [error, setError] = useState<string | null>(null);
+  const [exportedFile, setExportedFile] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string | undefined>(undefined);
+  const pendingWritesRef = useRef<Promise<unknown>[]>([]);
+  const processedActionIdsRef = useRef<Set<string>>(new Set());
+
+  const trackWrite = useCallback(<T,>(work: Promise<T>): Promise<T> => {
+    const tracked = work
+      .catch(err => {
+        console.error('[CUA][options] persistence failed', err);
+        throw err;
+      })
+      .finally(() => {
+        const idx = pendingWritesRef.current.indexOf(tracked);
+        if (idx >= 0) pendingWritesRef.current.splice(idx, 1);
+      });
+    pendingWritesRef.current.push(tracked);
+    return tracked;
+  }, []);
+
+  const waitForPendingWrites = useCallback(async () => {
+    const pending = [...pendingWritesRef.current];
+    pendingWritesRef.current.length = 0;
+    if (pending.length === 0) return;
+    await Promise.allSettled(pending);
+  }, []);
+
+  const triggerDownload = useCallback((blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const exportRecording = useCallback(
+    async (sessionId: string) => {
+      setStatus('Exporting…');
+      setExportedFile(null);
+      try {
+        const { blob, filename } = await exportSessionArchive(sessionId);
+        triggerDownload(blob, filename);
+        setExportedFile(filename);
+        setStatus('Exported');
+      } catch (err) {
+        setError(`Failed to export recording: ${(err as Error).message}`);
+        setStatus('Error');
+      }
+    },
+    [triggerDownload],
+  );
+
+  const stopStream = useCallback(async () => {
+    if (session.status !== 'recording' && !mediaRecorderRef.current && !streamRef.current) {
+      return;
+    }
+    const currentSessionId = sessionIdRef.current ?? session.sessionId;
+    setStatus('Stopping…');
+    const recorder = mediaRecorderRef.current;
+    const waitForStop =
+      recorder && recorder.state !== 'inactive'
+        ? new Promise<void>(resolve => recorder.addEventListener('stop', () => resolve(), { once: true }))
+        : Promise.resolve();
+
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    mediaRecorderRef.current = null;
+
+    await waitForStop;
+    await waitForPendingWrites();
+
+    setSession(prev => ({ ...prev, status: 'ended', endedAt: Date.now() }));
+    setStatus('Stopped');
+
+    if (currentSessionId) {
+      await exportRecording(currentSessionId);
+    }
+  }, [exportRecording, session.sessionId, session.status, waitForPendingWrites]);
 
   const startStream = useCallback(
     async (overrideStreamId?: string) => {
       setError(null);
       setStatus('Starting…');
+      setExportedFile(null);
       // Ensure any prior recorder/stream is stopped before starting a new one
       if (mediaRecorderRef.current || streamRef.current) {
-        stopStream();
+        await stopStream();
       }
       const idToUse = overrideStreamId ?? streamId;
       if (!idToUse) {
@@ -59,7 +148,7 @@ const Options = () => {
         stream.getTracks().forEach(track => {
           track.onended = () => {
             console.log('[CUA][options] track ended');
-            stopStream();
+            void stopStream();
           };
         });
         const video = document.createElement('video');
@@ -73,36 +162,40 @@ const Options = () => {
         canvas.height = VIDEO_HEIGHT;
         canvasRef.current = canvas;
 
+        const sessionId = session.sessionId ?? crypto.randomUUID();
+        sessionIdRef.current = sessionId;
+        processedActionIdsRef.current = new Set();
         const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(
           m => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m),
         );
         const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
-        recorder.ondataavailable = async event => {
+        recorder.ondataavailable = event => {
           if (!event.data || event.data.size === 0) return;
-          console.log('[CUA][options] chunk available', {
-            size: event.data.size,
-            type: event.data.type,
-            timecode: event.timecode,
-          });
-          await saveVideoChunk({
-            chunkId: crypto.randomUUID(),
-            sessionId: session.sessionId,
-            wallClockCapturedAt: Date.now(),
-            timecode: event.timecode,
-            mimeType: event.data.type,
-            data: event.data,
-          });
-          await enforceLimits();
+          const work = (async () => {
+            console.log('[CUA][options] chunk available', {
+              size: event.data.size,
+              type: event.data.type,
+              timecode: event.timecode,
+            });
+            await saveVideoChunk({
+              chunkId: crypto.randomUUID(),
+              sessionId,
+              wallClockCapturedAt: Date.now(),
+              timecode: event.timecode,
+              mimeType: event.data.type,
+              data: event.data,
+            });
+            await enforceLimits();
+          })();
+          void trackWrite(work);
         };
         recorder.onerror = evt => setError(evt.error?.message ?? 'MediaRecorder error');
         recorder.onstop = () => {
           console.log('[CUA][options] MediaRecorder stopped');
-          stopStream();
         };
         recorder.start(DEFAULT_TIMESLICE_MS);
         console.log('[CUA][options] MediaRecorder started', { mime });
         mediaRecorderRef.current = recorder;
-        const sessionId = session.sessionId ?? crypto.randomUUID();
         const newState: SessionState = {
           sessionId,
           status: 'recording',
@@ -118,7 +211,7 @@ const Options = () => {
         console.error('[CUA][options] startStream failed', err);
       }
     },
-    [session.sessionId, streamId],
+    [session.sessionId, source, stopStream, streamId, trackWrite],
   );
 
   const requestStreamId = useCallback(async () => {
@@ -146,39 +239,35 @@ const Options = () => {
     }
   }, [source, startStream]);
 
-  const stopStream = () => {
-    mediaRecorderRef.current?.stop();
-    mediaRecorderRef.current = null;
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    setSession(prev => ({ ...prev, status: 'ended', endedAt: Date.now() }));
-    setStatus('Stopped');
-  };
-
   const handleAction = useCallback(
-    async (action: ActionPayload) => {
-      if (session.status !== 'recording') return;
+    (action: ActionPayload) => {
+      if (session.status !== 'recording' || !session.sessionId) return;
+      if (processedActionIdsRef.current.has(action.actionId)) return;
+      processedActionIdsRef.current.add(action.actionId);
       const actionWithSession: ActionPayload = { ...action, sessionId: session.sessionId };
       console.log('[CUA][options] action received', { type: action.type, actionId: action.actionId });
-      await saveAction(actionWithSession);
+      void trackWrite(saveAction(actionWithSession));
       if (!videoRef.current || !canvasRef.current) return;
-      const ctx = canvasRef.current.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(videoRef.current, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
-      const blob = await new Promise<Blob | null>(resolve => canvasRef.current?.toBlob(b => resolve(b), 'image/png'));
-      if (!blob) return;
-      console.log('[CUA][options] screenshot captured', { size: blob.size });
-      await saveScreenshot({
-        screenshotId: crypto.randomUUID(),
-        sessionId: session.sessionId,
-        actionId: action.actionId,
-        phase: 'during',
-        wallClockCapturedAt: Date.now(),
-        data: blob,
-      });
-      await enforceLimits();
+      const capture = (async () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx || !videoRef.current) return;
+        ctx.drawImage(videoRef.current, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
+        const blob = await new Promise<Blob | null>(resolve => canvasRef.current?.toBlob(b => resolve(b), 'image/png'));
+        if (!blob) return;
+        console.log('[CUA][options] screenshot captured', { size: blob.size });
+        await saveScreenshot({
+          screenshotId: crypto.randomUUID(),
+          sessionId: session.sessionId,
+          actionId: action.actionId,
+          phase: 'during',
+          wallClockCapturedAt: Date.now(),
+          data: blob,
+        });
+        await enforceLimits();
+      })();
+      void trackWrite(capture);
     },
-    [session.sessionId, session.status],
+    [session.sessionId, session.status, trackWrite],
   );
 
   useEffect(() => {
@@ -189,12 +278,12 @@ const Options = () => {
       } else if (message.type === 'cua/recorder-start') {
         void requestStreamId();
       } else if (message.type === 'cua/recorder-stop') {
-        stopStream();
+        void stopStream();
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [handleAction, requestStreamId, session.status]);
+  }, [handleAction, requestStreamId, session.status, stopStream]);
 
   // Auto prompt removed; user must click "Select source"
 
@@ -237,11 +326,15 @@ const Options = () => {
                   disabled={session.status === 'recording'}>
                   {session.status === 'recording' ? 'Recording…' : 'Start'}
                 </button>
-                <button className="btn btn-ghost" onClick={stopStream} disabled={session.status !== 'recording'}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => void stopStream()}
+                  disabled={session.status !== 'recording'}>
                   Stop
                 </button>
               </div>
               {streamId ? <div className="hint">Source selected: {streamId.slice(0, 8)}…</div> : null}
+              {exportedFile ? <div className="hint">Exported: {exportedFile}</div> : null}
             </div>
           </div>
 
