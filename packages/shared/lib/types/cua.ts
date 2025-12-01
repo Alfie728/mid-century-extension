@@ -35,6 +35,8 @@ export interface DomMeta {
     clientY?: number;
     pageX?: number;
     pageY?: number;
+    screenX?: number;
+    screenY?: number;
     scrollX: number;
     scrollY: number;
   };

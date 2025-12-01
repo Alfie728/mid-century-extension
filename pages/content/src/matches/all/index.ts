@@ -16,7 +16,11 @@ if (!alreadyInstalled) {
     return selectors;
   };
 
-  const getDomMeta = (target: EventTarget | null, sampleText: boolean): DomMeta => {
+  const getDomMeta = (
+    target: EventTarget | null,
+    sampleText: boolean,
+    coordsOverride?: Partial<DomMeta['coords']>,
+  ): DomMeta => {
     const element = target instanceof Element ? target : null;
     const rect = element?.getBoundingClientRect();
     const textSample = sampleText && element?.textContent ? element.textContent.trim().slice(0, 140) : undefined;
@@ -32,12 +36,14 @@ if (!alreadyInstalled) {
       textSample,
       inputType,
       coords: {
-        clientX: rect?.x,
-        clientY: rect?.y,
-        pageX: rect ? rect.x + window.scrollX : undefined,
-        pageY: rect ? rect.y + window.scrollY : undefined,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY,
+        clientX: coordsOverride?.clientX ?? rect?.x,
+        clientY: coordsOverride?.clientY ?? rect?.y,
+        pageX: coordsOverride?.pageX ?? (rect ? rect.x + window.scrollX : undefined),
+        pageY: coordsOverride?.pageY ?? (rect ? rect.y + window.scrollY : undefined),
+        screenX: coordsOverride?.screenX,
+        screenY: coordsOverride?.screenY,
+        scrollX: coordsOverride?.scrollX ?? window.scrollX,
+        scrollY: coordsOverride?.scrollY ?? window.scrollY,
       },
     };
   };
@@ -60,7 +66,16 @@ if (!alreadyInstalled) {
   };
 
   const handleClick = (event: MouseEvent) => {
-    const domMeta = getDomMeta(event.target, true);
+    const domMeta = getDomMeta(event.target, true, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pageX: event.pageX,
+      pageY: event.pageY,
+      screenX: event.screenX,
+      screenY: event.screenY,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
     sendAction('click', {
       domMeta,
       happenedAt: Date.now(),
