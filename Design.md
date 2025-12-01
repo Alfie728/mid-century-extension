@@ -2,7 +2,7 @@
 
 Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
 
-- **Interaction Listener** (content script): Captures clicks/scrolls/keys/drags, filters sensitive targets, emits high-level Action events with timestamps and DOM metadata.
+- **Interaction Listener** (content script): Captures clicks/scrolls/keys/drags plus hover enter/leave and input changes, filters sensitive targets, emits high-level Action events with timestamps and DOM metadata.
 - **Background Orchestrator** (service worker): Manages session lifecycle, permissions, state, and messaging between contexts. Avoids owning long-lived streams (SW can suspend).
 - **Recorder Host** (offscreen document or pinned extension page): Sole owner of `MediaStream`, `MediaRecorder`, and canvas screenshot pipeline so streams survive SW suspension. Communicates via typed messages.
 - **Screenshot Service** (in Recorder Host): Given `MediaStream`, `ActionId`, and phase (before/after), grabs frames and produces `ScreenshotArtifact` with dual timestamps (wall + stream).
@@ -46,12 +46,15 @@ Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
     - videoChunks: VideoChunk[]
 - **Action**
     - actionId
-    - type (click, scroll, drag, keypress)
+    - type (click, scroll, drag, keypress, mouseover_start/end, input, drag_start/end, etc.)
     - domMeta (element selectors, attributes, coords)
     - happenedAt (wall clock) and localPerf (shared perf baseline)
+    - relativeTimeMs (ms since session start; aligns with video chunks and screenshot numbering)
     - streamTimestamp (time on the stream)
-    - beforeScreenshotRef
-    - afterScreenshotRef
+    - pointerMeta (button, clickCount, normalized viewport coords x/y)
+    - keyMeta (key, code, modifiers, keyCodes[] for chords)
+    - inputValue (for `input` events; PII-filtered)
+    - screenshotRef (during-event frame) plus beforeScreenshotRef/afterScreenshotRef
 - **VideoChunk**
     - chunkId
     - sessionId
@@ -128,6 +131,7 @@ Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
 - [ ] MediaRecorder pipeline: capability probe for MIME/bitrate, start recorder with timeslice, capture `dataavailable` with timecodes, and persist chunk metadata + blobs.
 - [ ] Screenshot service: implement before/after capture around actions, record wall/stream timestamps + latency, and apply optional redaction/blur hooks.
 - [x] Interaction Listener: capture click/scroll/drag/key events, normalize coordinates/selectors, filter sensitive fields, handle iframe/shadow DOM injection where permitted, and send actions with wall + perf baselines.
+- [ ] Action payload coverage: add hover enter/leave, drag start/end, input/change markers, click counts/right-clicks, top-level pointer coords, keyCodes[], input text (with redaction), per-action `relativeTimeMs`, and link to a “during” screenshot ref.
 - [ ] Timing alignment: establish shared `performance.now()` baseline across contexts; store wall-clock + stream `currentTime` for all artifacts; handle latency skew.
 - [x] Storage layer: define IndexedDB stores for sessions, actions, screenshots, videoChunks, uploadJobs; implement atomic writes, size tracking, eviction/quota enforcement, cleanup routines, and export (actions/screenshots/video) bundles from IndexedDB after stop. (UploadJobs wiring still follows.)
 - [ ] Upload coordination: detect Web Locks support; implement lock fallback via BroadcastChannel + IndexedDB mutex; batch uploads, mark success atomically, and backoff/retry with cap.
@@ -135,3 +139,16 @@ Template: https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite
 - [ ] Privacy/safety: allowlist/denylist domains, auto-pause on denied domains, optional no-audio mode, retention settings (auto-delete after N days), and “delete session” control.
 - [ ] Resilience: handle stream track `ended`, recorder errors, service worker suspension (rehydrate Recorder Host), re-auth for uploads, and poison-pill after repeated failures.
 - [ ] Testing: capability tests per Chrome version/context, performance profiling (CPU/mem) with target cadences, race tests for lock/mutex under context churn, coverage tests for CSP/iframes/shadow DOM, and end-to-end manual run (start → actions → upload → stop).
+
+---
+
+## **10. Action Event Coverage**
+
+- **Target payload shape**: Every action carries a session-relative timestamp, top-level pointer coords (`x`, `y`), button metadata with click count, a “during” screenshot ref, text for input/change events (post-redaction), key chords as code arrays, and markers for hover/drag phases.
+- **Current gaps**: Only click/scroll/keypress are emitted; no hover/input/drag markers; no session-relative timestamp; no per-action screenshot ref; pointer data is buried in `domMeta`; key metadata lacks chord arrays; typed text is not captured.
+- **Planned changes**:
+  - Add a session-level clock baseline so all actions include `relativeTimeMs` and reuse that zero-point for screenshot sequencing.
+  - Extend ActionType to include `mouseover_start/end`, `drag_start/end`, and `input`/`change`; propagate click counts and right-clicks.
+  - Promote pointer data to top-level coords normalized to viewport/stream; retain `domMeta` for selectors.
+  - Capture input values with PII filtering (password/email/tel/number and custom allow/deny lists) and key chords as `keyCodes[]` alongside modifier flags.
+  - Attach a `screenshotRef` per action (prefer the “during” frame) and align filenames/IDs to relative timestamps.
