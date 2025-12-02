@@ -163,7 +163,16 @@ if (!alreadyInstalled) {
       if (lastMoveEvent) {
         const target = lastMoveEvent.target as Element;
         sendAction('mouseover_end', {
-          domMeta: getDomMeta(target, false),
+          domMeta: getDomMeta(target, true, {
+            clientX: lastMoveEvent.clientX,
+            clientY: lastMoveEvent.clientY,
+            pageX: lastMoveEvent.pageX,
+            pageY: lastMoveEvent.pageY,
+            screenX: lastMoveEvent.screenX,
+            screenY: lastMoveEvent.screenY,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+          }),
           happenedAt: Date.now(),
           perfTime: performance.now() - perfBaseline,
         });
