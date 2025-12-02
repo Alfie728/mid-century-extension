@@ -126,9 +126,60 @@ if (!alreadyInstalled) {
     });
   };
 
-  window.addEventListener('click', handleClick, { capture: true });
+  let isMoving = false;
+  let moveTimeoutId: number | null = null;
+  let lastMoveEvent: PointerEvent | null = null;
+
+  const handlePointerMove = (event: PointerEvent) => {
+    lastMoveEvent = event;
+
+    if (!isMoving) {
+      isMoving = true;
+      const target = event.target as Element;
+      const domMeta = getDomMeta(target, true, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        pageX: event.pageX,
+        pageY: event.pageY,
+        screenX: event.screenX,
+        screenY: event.screenY,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+      });
+
+      sendAction('mouseover_start', {
+        domMeta,
+        happenedAt: Date.now(),
+        perfTime: performance.now() - perfBaseline,
+      });
+    }
+
+    if (moveTimeoutId) {
+      clearTimeout(moveTimeoutId);
+    }
+
+    moveTimeoutId = window.setTimeout(() => {
+      isMoving = false;
+      if (lastMoveEvent) {
+        const target = lastMoveEvent.target as Element;
+        sendAction('mouseover_end', {
+          domMeta: getDomMeta(target, false),
+          happenedAt: Date.now(),
+          perfTime: performance.now() - perfBaseline,
+        });
+      }
+    }, 500);
+  };
+
+  const handleInteraction = (event: Event) => {
+    if (event.type === 'click') handleClick(event as MouseEvent);
+    if (event.type === 'keydown') handleKeydown(event as KeyboardEvent);
+  };
+
+  window.addEventListener('click', handleInteraction, { capture: true });
   window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
-  window.addEventListener('keydown', handleKeydown, { capture: true });
+  window.addEventListener('keydown', handleInteraction, { capture: true });
+  window.addEventListener('pointermove', handlePointerMove, { capture: true });
 
   console.log('[CUA] interaction listener installed');
 } else {

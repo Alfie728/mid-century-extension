@@ -212,7 +212,12 @@ export const loadSessionBundle = async (sessionId: string): Promise<SessionExpor
     getBySession<StoredScreenshot>('screenshots', sessionId),
     getBySession<StoredVideoChunk>('videoChunks', sessionId),
   ]);
-  return { session, actions, screenshots, videoChunks };
+  return {
+    session,
+    actions: actions.sort((a, b) => a.happenedAt - b.happenedAt),
+    screenshots: screenshots.sort((a, b) => a.wallClockCapturedAt - b.wallClockCapturedAt),
+    videoChunks: videoChunks.sort((a, b) => a.createdAt - b.createdAt),
+  };
 };
 
 const blobToU8 = async (blob?: Blob) => (blob ? new Uint8Array(await blob.arrayBuffer()) : undefined);

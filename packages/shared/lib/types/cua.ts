@@ -19,7 +19,7 @@ export interface SessionState {
   reason?: string;
 }
 
-export type ActionType = 'click' | 'scroll' | 'drag' | 'keypress';
+export type ActionType = 'click' | 'scroll' | 'drag' | 'keypress' | 'mouseover_start' | 'mouseover_end';
 
 export interface DomMeta {
   tag: string;
