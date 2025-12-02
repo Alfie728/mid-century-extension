@@ -1,18 +1,41 @@
-import { t } from '@extension/i18n';
-import { ToggleButton } from '@extension/ui';
-import { useEffect } from 'react';
+import type { CuaMessage, SessionState } from '@extension/shared';
+import { useCallback, useEffect, useState } from 'react';
+import { FloatingToolbar } from './FloatingToolbar';
 
 export default function App() {
-  useEffect(() => {
-    console.log('[CEB] Content ui all loaded');
+  const [session, setSession] = useState<SessionState>({ status: 'idle' });
+
+  const requestStatus = useCallback(async () => {
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'cua/status-request',
+      })) as CuaMessage | undefined;
+      if (response?.type === 'cua/status') {
+        setSession(response.payload);
+      }
+    } catch (e) {
+      // Ignore errors if background script is not ready
+      console.debug('Failed to request status', e);
+    }
   }, []);
 
-  return (
-    <div className="flex items-center justify-between gap-2 rounded bg-blue-100 px-2 py-1">
-      <div className="flex gap-1 text-sm text-blue-500">
-        Edit <strong className="text-blue-700">pages/content-ui/src/matches/all/App.tsx</strong> and save to reload.
-      </div>
-      <ToggleButton className={'mt-0'}>{t('toggleTheme')}</ToggleButton>
-    </div>
-  );
+  useEffect(() => {
+    void requestStatus();
+  }, [requestStatus]);
+
+  useEffect(() => {
+    const handleMessage = (message: CuaMessage) => {
+      if (message.type === 'cua/status') {
+        setSession(message.payload);
+      }
+    };
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
+
+  if (session.status !== 'recording') {
+    return null;
+  }
+
+  return <FloatingToolbar />;
 }

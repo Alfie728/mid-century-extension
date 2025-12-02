@@ -51,23 +51,6 @@ const Popup = () => {
     }
   };
 
-  const stopTracking = async () => {
-    setLoading(true);
-    try {
-      const stopResponse = (await chrome.runtime.sendMessage({
-        type: 'cua/recorder-stop',
-      })) as CuaMessage | undefined;
-      if (stopResponse?.type === 'cua/ack' && !stopResponse.payload.ok) {
-        throw new Error(stopResponse.payload.message ?? 'Failed to stop recorder');
-      }
-      setSession(prev => ({ ...prev, status: 'ended', endedAt: Date.now() }));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     void requestStatus();
   }, [requestStatus]);
@@ -92,12 +75,11 @@ const Popup = () => {
 
         <div className="card">
           <div className="actions">
-            <button className="primary wide" onClick={startTracking} disabled={loading}>
-              Start recording
-            </button>
-            <button className="ghost wide" onClick={stopTracking} disabled={loading}>
-              Stop recording
-            </button>
+            {session.status !== 'recording' && (
+              <button className="primary wide" onClick={startTracking} disabled={loading}>
+                Start recording
+              </button>
+            )}
           </div>
           {error ? <div className="error">{error}</div> : null}
         </div>

@@ -103,6 +103,23 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
         .sendMessage({ type: 'cua/action', payload: message.payload })
         .catch(error => log('Failed to forward action', error));
       break;
+    case 'cua/status':
+      // Broadcast status to all tabs
+      void (async () => {
+        try {
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (tab.id) {
+              chrome.tabs.sendMessage(tab.id, message).catch(() => {
+                // Ignore errors (e.g. tab has no content script)
+              });
+            }
+          }
+        } catch (error) {
+          log('Failed to broadcast status', error);
+        }
+      })();
+      break;
     default:
       break;
   }
