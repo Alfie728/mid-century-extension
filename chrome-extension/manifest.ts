@@ -41,7 +41,6 @@ const manifest = {
     'tabCapture',
     'desktopCapture',
   ],
-  options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
     type: 'module',

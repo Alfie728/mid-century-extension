@@ -99,21 +99,17 @@ export interface UploadJob {
 }
 
 export type CuaMessage =
-  | { type: 'cua/start'; payload: { source: CaptureSourceType; requestedAt: number } }
-  | { type: 'cua/stop'; payload?: { reason?: string } }
-  | { type: 'cua/pause'; payload?: { reason?: string } }
-  | { type: 'cua/resume' }
   | { type: 'cua/status-request' }
   | { type: 'cua/status'; payload: SessionState }
   | { type: 'cua/action'; payload: ActionPayload }
-  | { type: 'cua/offscreen/start'; payload: { session: SessionState } }
-  | { type: 'cua/offscreen/stop'; payload?: { reason?: string } }
-  | { type: 'cua/offscreen/action'; payload: ActionPayload }
   | { type: 'cua/offscreen-ready'; payload?: { sessionId?: string } }
-  | { type: 'cua/stream-request'; payload: { sources: CaptureSourceType[] } }
-  | { type: 'cua/stream-response'; payload: { streamId?: string; error?: string; source?: CaptureSourceType } }
+  | { type: 'cua/stream-request'; payload?: { sources?: CaptureSourceType[]; requestId?: string } }
+  | {
+      type: 'cua/stream-response';
+      payload: { streamId?: string; error?: string; source?: CaptureSourceType; requestId?: string };
+    }
   | { type: 'cua/recorder-start'; payload?: { streamId?: string; source?: CaptureSourceType; requestedAt?: number } }
-  | { type: 'cua/recorder-stop' }
+  | { type: 'cua/recorder-stop'; payload?: { reason?: string } }
   | { type: 'cua/stream-dead'; payload?: { sessionId?: string; reason?: string } }
   | { type: 'cua/ack'; payload: { ok: boolean; message?: string; session?: SessionState } };
 

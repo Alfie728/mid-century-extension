@@ -1,12 +1,11 @@
 import '@src/Popup.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CuaMessage, SessionState } from '@extension/shared';
 
 const Popup = () => {
   const [session, setSession] = useState<SessionState>({ status: 'idle' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const recorderTabIdRef = useRef<number | null>(null);
 
   const statusLabel = useMemo(() => {
     switch (session.status) {
@@ -31,13 +30,20 @@ const Popup = () => {
   }, []);
 
   const startTracking = async () => {
+    console.log('startTracking');
     setLoading(true);
     setError(null);
     try {
-      const { tabId } = await ensureRecorderTab();
-      recorderTabIdRef.current = tabId;
-      chrome.tabs.update(tabId, { active: true });
-      setSession({ status: 'recording', source: { type: 'screen', chosenAt: Date.now() } });
+      const requestId = crypto.randomUUID();
+      const immediateResponse = (await chrome.runtime.sendMessage({
+        type: 'cua/stream-request',
+        payload: { sources: ['tab', 'window', 'screen'], requestId },
+      })) as CuaMessage | undefined;
+      if (immediateResponse?.type === 'cua/stream-response' && immediateResponse.payload?.error) {
+        throw new Error(immediateResponse.payload.error);
+      }
+      // Offscreen will receive the stream-response directly and start recording; we just wait for status updates.
+      setSession(prev => ({ ...prev, status: 'consenting' }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -48,29 +54,18 @@ const Popup = () => {
   const stopTracking = async () => {
     setLoading(true);
     try {
-      await chrome.runtime.sendMessage({ type: 'cua/recorder-stop' } satisfies CuaMessage);
-      setSession({ status: 'ended' });
+      const stopResponse = (await chrome.runtime.sendMessage({
+        type: 'cua/recorder-stop',
+      })) as CuaMessage | undefined;
+      if (stopResponse?.type === 'cua/ack' && !stopResponse.payload.ok) {
+        throw new Error(stopResponse.payload.message ?? 'Failed to stop recorder');
+      }
+      setSession(prev => ({ ...prev, status: 'ended', endedAt: Date.now() }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const ensureRecorderTab = async (): Promise<{ tabId: number; created: boolean }> => {
-    if (recorderTabIdRef.current) {
-      try {
-        const tab = await chrome.tabs.get(recorderTabIdRef.current);
-        if (tab?.id) return { tabId: tab.id, created: false };
-      } catch {
-        recorderTabIdRef.current = null;
-      }
-    }
-    const tab = await chrome.tabs.create({
-      url: chrome.runtime.getURL('options/index.html'),
-      active: true,
-    });
-    return { tabId: tab.id!, created: true };
   };
 
   useEffect(() => {
@@ -98,7 +93,7 @@ const Popup = () => {
         <div className="card">
           <div className="actions">
             <button className="primary wide" onClick={startTracking} disabled={loading}>
-              Open recorder
+              Start recording
             </button>
             <button className="ghost wide" onClick={stopTracking} disabled={loading}>
               Stop recording

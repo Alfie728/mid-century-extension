@@ -128,18 +128,10 @@ const Options = () => {
       }
       try {
         console.log('[CUA][options] starting capture', { streamId: idToUse, source });
-        const constraints = {
+        const constraints: MediaStreamConstraints = {
           audio: false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: idToUse,
-              maxWidth: VIDEO_WIDTH,
-              maxHeight: VIDEO_HEIGHT,
-              maxFrameRate: 30,
-            },
-          },
-        } as unknown as MediaStreamConstraints;
+          video: true,
+        };
 
         console.log('[CUA][options] constraints', constraints);
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -154,16 +146,6 @@ const Options = () => {
             void stopStream();
           };
         });
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.muted = true;
-        await video.play();
-        videoRef.current = video;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = VIDEO_WIDTH;
-        canvas.height = VIDEO_HEIGHT;
-        canvasRef.current = canvas;
 
         const sessionId = crypto.randomUUID();
         sessionIdRef.current = sessionId;
@@ -214,7 +196,7 @@ const Options = () => {
         console.error('[CUA][options] startStream failed', err);
       }
     },
-    [session.sessionId, source, stopStream, streamId, trackWrite],
+    [source, stopStream, streamId, trackWrite],
   );
 
   const requestStreamId = useCallback(async () => {

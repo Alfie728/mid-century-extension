@@ -11,6 +11,7 @@ export type StoredAction = ActionPayload & { createdAt: number };
 export type StoredScreenshot = ScreenshotArtifact & { createdAt: number };
 export type StoredVideoChunk = VideoChunk & { createdAt: number };
 export type StoredUploadJob = UploadJob & { createdAt: number };
+export type StoredSession = SessionState & { createdAt: number };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
