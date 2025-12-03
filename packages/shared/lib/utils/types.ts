@@ -1,3 +1,5 @@
+/// <reference types="chrome-types" />
+
 import type { COLORS } from './const.js';
 import type { TupleToUnion } from 'type-fest';
 
@@ -7,4 +9,4 @@ export type ExcludeValuesFromBaseArrayType<B extends string[], E extends (string
   TupleToUnion<B>,
   TupleToUnion<E>
 >[];
-export type ManifestType = chrome.runtime.ManifestV3;
+export type ManifestType = ReturnType<typeof chrome.runtime.getManifest>;

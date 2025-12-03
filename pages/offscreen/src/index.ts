@@ -262,24 +262,25 @@ const handleAction = (payload: ActionPayload) => {
   void trackWrite(captureScreenshot(action, 'after', AFTER_DELAY_MS));
 };
 
-const handleStatusRequest = (sendResponse?: (response: CuaMessage) => void) => {
-  sendResponse?.({ type: 'cua/status', payload: sessionState });
+const handleStatusRequest = (respond?: (response: CuaMessage) => void) => {
+  respond?.({ type: 'cua/status', payload: sessionState });
 };
 
 chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse) => {
   if (!isCuaMessage(message)) return;
 
+  // Cast sendResponse to accept a response argument (chrome-types incorrectly types it as () => void)
+  const respond = sendResponse as (response?: CuaMessage) => void;
+
   switch (message.type) {
     case 'cua/recorder-start':
       void startRecording(message.payload)
-        .then(() => sendResponse?.({ type: 'cua/ack', payload: { ok: true, session: sessionState } }))
-        .catch(error =>
-          sendResponse?.({ type: 'cua/ack', payload: { ok: false, message: (error as Error)?.message } }),
-        );
+        .then(() => respond({ type: 'cua/ack', payload: { ok: true, session: sessionState } }))
+        .catch(error => respond({ type: 'cua/ack', payload: { ok: false, message: (error as Error)?.message } }));
       return true;
     case 'cua/recorder-stop':
       void stopRecording(message.payload?.reason).then(() =>
-        sendResponse?.({ type: 'cua/ack', payload: { ok: true, session: sessionState } }),
+        respond({ type: 'cua/ack', payload: { ok: true, session: sessionState } }),
       );
       return true;
     case 'cua/stream-response':
@@ -298,7 +299,7 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
       handleAction(message.payload);
       break;
     case 'cua/status-request':
-      handleStatusRequest(sendResponse);
+      handleStatusRequest(respond);
       return true;
     default:
       break;

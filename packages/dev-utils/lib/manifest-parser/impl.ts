@@ -6,7 +6,7 @@ const convertToFirefoxCompatibleManifest = (manifest: ManifestType) => {
     ...manifest,
   } as { [key: string]: unknown };
 
-  if (manifest.background?.service_worker) {
+  if (manifest.background && 'service_worker' in manifest.background && manifest.background.service_worker) {
     manifestCopy.background = {
       scripts: [manifest.background.service_worker],
       type: 'module',

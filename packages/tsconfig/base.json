@@ -20,6 +20,6 @@
     "moduleResolution": "bundler",
     "target": "ESNext",
     "lib": ["DOM", "ESNext"],
-    "types": ["node", "chrome"]
+    "types": ["node", "chrome-types"]
   }
 }

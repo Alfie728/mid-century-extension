@@ -202,17 +202,17 @@ const Options = () => {
   const requestStreamId = useCallback(async () => {
     setError(null);
     try {
-      const sources = source === 'tab' ? ['tab'] : ['screen', 'window'];
+      const sources: chrome.desktopCapture.DesktopCaptureSourceType[] =
+        source === 'tab' ? ['tab'] : ['screen', 'window'];
       console.log('[CUA][options] prompting capture', { source, sources });
       const id = await new Promise<string | undefined>((resolve, reject) => {
-        chrome.desktopCapture.chooseDesktopMedia(sources, chosen => {
-          const err = chrome.runtime.lastError;
-          if (err) {
-            reject(new Error(err.message));
-            return;
-          }
-          resolve(chosen ?? undefined);
-        });
+        try {
+          chrome.desktopCapture.chooseDesktopMedia(sources, chosen => {
+            resolve(chosen ?? undefined);
+          });
+        } catch (err) {
+          reject(err);
+        }
       });
       if (!id) throw new Error('User cancelled capture');
       setStreamId(id);
@@ -271,6 +271,7 @@ const Options = () => {
       } else if (message.type === 'cua/recorder-stop') {
         void stopStream();
       }
+      return undefined;
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);

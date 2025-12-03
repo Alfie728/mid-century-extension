@@ -5,7 +5,7 @@
     "paths": {
       "@src/*": ["src/*"]
     },
-    "types": ["chrome", "node", "./tailwind.d.ts"]
+    "types": ["chrome-types", "node", "./tailwind.d.ts"]
   },
   "include": ["src", "tailwind.config.ts", "build.mts"]
 }

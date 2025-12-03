@@ -60,6 +60,7 @@ const Popup = () => {
       if (message.type === 'cua/status') {
         setSession(message.payload);
       }
+      return undefined;
     };
     chrome.runtime.onMessage.addListener(handleMessage);
     return () => chrome.runtime.onMessage.removeListener(handleMessage);

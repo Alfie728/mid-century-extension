@@ -28,6 +28,7 @@
   "devDependencies": {
     "@extension/storage": "workspace:*",
     "@extension/tsconfig": "workspace:*",
+    "chrome-types": "^0.1.392",
     "type-fest": "^4.41.0"
   }
 }
