@@ -45,7 +45,7 @@ const Popup = () => {
       // Offscreen will receive the stream-response directly and start recording; we just wait for status updates.
       setSession(prev => ({ ...prev, status: 'consenting' }));
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }

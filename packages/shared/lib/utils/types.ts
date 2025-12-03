@@ -1,5 +1,3 @@
-/// <reference types="chrome-types" />
-
 import type { COLORS } from './const.js';
 import type { TupleToUnion } from 'type-fest';
 

@@ -262,25 +262,24 @@ const handleAction = (payload: ActionPayload) => {
   void trackWrite(captureScreenshot(action, 'after', AFTER_DELAY_MS));
 };
 
-const handleStatusRequest = (respond?: (response: CuaMessage) => void) => {
-  respond?.({ type: 'cua/status', payload: sessionState });
+type MessageResponse = (response: CuaMessage) => void;
+
+const handleStatusRequest = (sendResponse: MessageResponse) => {
+  sendResponse({ type: 'cua/status', payload: sessionState });
 };
 
-chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: CuaMessage, _, sendResponse: MessageResponse) => {
   if (!isCuaMessage(message)) return;
-
-  // Cast sendResponse to accept a response argument (chrome-types incorrectly types it as () => void)
-  const respond = sendResponse as (response?: CuaMessage) => void;
 
   switch (message.type) {
     case 'cua/recorder-start':
       void startRecording(message.payload)
-        .then(() => respond({ type: 'cua/ack', payload: { ok: true, session: sessionState } }))
-        .catch(error => respond({ type: 'cua/ack', payload: { ok: false, message: (error as Error)?.message } }));
+        .then(() => sendResponse({ type: 'cua/ack', payload: { ok: true, session: sessionState } }))
+        .catch((error: Error) => sendResponse({ type: 'cua/ack', payload: { ok: false, message: error?.message } }));
       return true;
     case 'cua/recorder-stop':
       void stopRecording(message.payload?.reason).then(() =>
-        respond({ type: 'cua/ack', payload: { ok: true, session: sessionState } }),
+        sendResponse({ type: 'cua/ack', payload: { ok: true, session: sessionState } }),
       );
       return true;
     case 'cua/stream-response':
@@ -299,7 +298,7 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
       handleAction(message.payload);
       break;
     case 'cua/status-request':
-      handleStatusRequest(respond);
+      handleStatusRequest(sendResponse);
       return true;
     default:
       break;
@@ -309,12 +308,13 @@ chrome.runtime.onMessage.addListener((message: CuaMessage, _sender, sendResponse
 });
 
 void sendMessage({ type: 'cua/offscreen-ready', payload: { sessionId: sessionState.sessionId } });
+declare global {
+  var __cuaDebug: { listRecentActions: typeof listRecentActions; clearAll: typeof clearAll } | undefined;
+}
+
 void getDb()
   .then(async () => {
-    (globalThis as unknown as { __cuaDebug?: unknown }).__cuaDebug = {
-      listRecentActions,
-      clearAll,
-    };
+    globalThis.__cuaDebug = { listRecentActions, clearAll };
     void sendMessage({ type: 'cua/offscreen-ready', payload: { sessionId: sessionState.sessionId } });
     log('Offscreen recorder host ready');
   })
